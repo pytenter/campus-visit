@@ -2,6 +2,8 @@
 
 测试日期：2026-11-19（Asia/Shanghai）。环境为本机 macOS、Codex 随附 Node 24、pnpm 11.25.0、系统 Google Chrome 157.0.8103.79 + Playwright。浏览器使用 headless Chrome 真正创建 WebGL 场景，并以 SwiftShader 渲染；不是静态 DOM 截图，也没有用触发业务 dispatch 冒充三维点选。
 
+> 2026-11-19 增补（调研数据管道 P0 + 工程质量 P2）：本轮在 Windows 本机、Node v24.21.0、pnpm 11.28.5 下完成，详见文末"调研数据管道增补"一节。历史各节的数据均为当轮实测记录，未改写。
+
 ## 桌面实测
 
 - `pnpm install --frozen-lockfile`：成功。A-Frame 1.7.1 锁定、本地字体与本地原创几何可用。
@@ -80,3 +82,80 @@ Chrome实际从三维课程菜单进入校际原型，初次误入解释指路�
 26项单元测试、类型检查和生产构建通过。浏览器10项用例均有通过记录，批次见上。压力下发现按帧截断delta累积延长重放，改为共享实时时钟后，同一时间轴用例定向复测通过。手机与XR为输入模拟；实体头显仍未实测。
 
 截图：[校际规则](course-rules.png)、[校城资源](course-resources.png)。
+
+## 调研数据管道增补（2026-11-19）
+
+本轮目标不是加功能，而是把"收数据、存数据、出结论"的管道搭好，让原型可以带到现场。工具用法见 [fieldwork-tool.md](fieldwork-tool.md)。
+
+### 环境与命令
+
+- Windows 本机，Node `v24.21.0`、pnpm `11.28.5`（DSH 随附运行时），完全离线。
+- `pnpm exec tsc --noEmit`：**exit 0，零错误**。
+- `pnpm test`：**44 tests / 44 pass / 0 fail**。
+- `pnpm build`（`tsc --noEmit && vite build`）：**exit 0**。产物为 `dist/assets/index-Bv8JCPEj.js` 与 `dist/assets/index-B0t9nhhI.css`（文件名带内容哈希，每次构建会变，不要当作稳定路径引用），JS 约 1.39 MB。`dist/` 已被 `.gitignore:2` 忽略，不进版本库。
+
+### 测试构成
+
+| 测试文件 | 用例数 | 本轮改动 |
+| --- | --- | --- |
+| `tests/domain.test.ts` | 12 | **一字未改** |
+| `tests/institutions.test.ts` | 7 | **一字未改** |
+| `tests/course.test.ts` | 7 | **一字未改** |
+| `tests/fieldwork.test.ts` | 18 | 本轮新增 |
+
+**关于"用例数"与"代码里的 `test(` 块数"的口径差异**：上表是运行时用例数，也是 `pnpm test` 报告的条数。源码里 `test(` 只有 **41** 个：`domain` 9、`course` 7、`institutions` 7、`fieldwork` 18。差额 3 来自 `tests/domain.test.ts:37-39` 的双层 `for` 循环——2 种起始政策 × 2 种执行身份，在运行时展开成 4 条用例，而代码里只写了一个 `test(` 块。所以 `41 块 + 3 = 44 条`；历史小节里"26 项"同理（旧 23 块 + 3 = 26 条）。引用数字时请说明是块数还是运行条数，两者不是一回事。
+
+原 26 项全部保留并通过。验证方式：`git stash push --include-untracked` 后单独运行全套，仍为 **26/26 通过**，随后 `git stash pop` 恢复；`git status --porcelain` 中这三个旧测试文件从未出现。
+
+新增 18 项覆盖：
+
+1. 空理解记录只报告未开始，不输出达标或样本结论；
+2. 即使七人全部答对，n < 8 也明确样本不足；
+3. 八人全对、再加两位只说出两项与一项的人，恰好八成且每项达标；
+4. 任一单项不足八成时不能通过，n = 8 时一人未说出即失败；
+5. 某单项低于八成时，即使 allThree 较高也不能通过；
+6. 观察汇总提供区域、时段、排队均值及完整覆盖矩阵；
+7. 访谈配额按 8/8/2/2 给出缺口并汇总实际人数；
+8. 需求无记录保持拟议，少于三条不能 supported；
+9. 同向至少三条且达到三分之二才支持，反向及条件支持口径固定；
+10. 所有非拟议需求结论携带原话引语，缺失时拒绝结论；
+11. 编码表与原始访谈结构固定，不能事后新增分类；
+12. 事件重放恢复增删记录，不信任伪造的原始数组和派生字段；
+13. json 导出导入完整往返，非法 json、版本和矛盾数据均回初始；
+14. 重复编号、非法理解和观察数据不会进入恢复结果；
+15. **不传第三参数时与提交 08bcd12 逐字段等价，且不新增 evidenceLevel**；
+16. **旧调用路径在已执行规则与领卡状态下仍逐字段等价于基线**；
+17. 传入现场数据只提升证据等级，制度结论仍为拟议，且门槛未达时不写达标；
+18. 主流程各阶段文案不受调研数据影响（只有课程复盘读现场数据）。
+
+第 15、16 项守住"向后兼容"：`courseReview(state, prototypes)` 与 `courseReview(state, prototypes, fieldwork)` 在未传第三参数时，`summary`、`boundary`、`items` 全部字段逐字段相等，且返回对象里不存在 `evidenceLevel` 键。
+
+### 主流程零改动核对
+
+脚本化对比 `git show 08bcd12:src/main.ts` 与当前 `src/main.ts`：
+
+- 旧面板按钮 `b('文案','动作')` 共 **89 个**，当前 **90 个**；旧 89 个全部存在，且按原顺序出现（子序列校验通过），唯一新增是课程复盘末尾的「调研工具：录入与统计」。
+- 逐 case 做**整行逐字比较**（比较 `case 'X':return {...}` 那一整行，规范化 CRLF/LF 后）：`welcome`、`policy`、`reveal`、`card`、`replay`、`feedback`、`review`、`next`、`allocation`、`receipt`、`history`、`service`、`case`、`course`、`course-rules`、`course-resources`、`course-participation` 共 17 个分支的返回行 **全部 identical = true**，即文案、按钮文字与按钮顺序零改动。
+- `course-review` 分支只改两处：`courseReview` 多传第三参数，按钮数组末尾追加一项。`fieldwork-test` / `fieldwork-report` 是新增的独立分支，不影响主流程。
+
+### 措辞自查
+
+对 `src/`、`docs/`、`tests/` 全量扫描四类"既成成效"式措辞（"已"字分别搭配试点、达标、合作、验证）：除本节这段说明本身之外，其余命中都在**否定句或断言**中（例如"尚无…或试点成效"、测试里的否定断言和"拒绝伪造……状态"的用例名），没有任何一处把拟议写成既成事实；`src/fieldwork.ts`、`src/fieldwork-ui.ts`、`docs/fieldwork-tool.md`、`docs/xr-checklist.md` 四个本轮新增文件命中 **0 处**。数据条数未达阈值时（理解测试 n < 8、需求 n < 3），文本一律输出"样本不足，暂不判定"或"条数不足"，不给出达标判断。
+
+### 本轮未做 / 待办（如实记录）
+
+本轮范围只有清单里的 **P0（调研数据管道）+ P2（工程质量，能做的部分）**。清单中的 **P1 本轮未做**，不是遗漏，是范围外的既定安排：P1 各条都要等 P0 收上来的真实数据或现场条件才能推进，没有样本时先做只会产出拟议的伪结论。清单之外也未增加任何功能。
+
+- **未做实体头显实测**：仍无设备，WebXR 相关结论维持"模拟器验证 + 待实测模板"。见 [xr-checklist.md](xr-checklist.md)。
+- **未部署可信 HTTPS 域名**：只保留本地开发与静态服务验证；外网请求仍为 0。
+- **未做真实用户调研**：本轮交付的是管道本身，数据条数为 0，所有制度结论仍是"拟议"。80% 理解门槛与 20 人配额都还没有真实样本。
+- **浏览器 e2e 本轮未执行（未通过）**：`tests/browser.spec.ts` 的 10 条用例在本机跑不起来，不是断言失败，是浏览器缺位。`playwright.config.ts` 写死 `launchOptions:{channel:'chrome'}`，而本机既没有装 Google Chrome，也没有 Playwright 自带的浏览器（`%LOCALAPPDATA%\ms-playwright` 目录不存在）。实际报错：
+
+  ```
+  Error: browserType.launch: Chromium distribution 'chrome' is not found at
+  <LOCALAPPDATA>\Google\Chrome\Application\chrome.exe
+  ```
+
+  （报错原文路径中含本机用户名，此处以 `%LOCALAPPDATA%` 等价替换，不影响结论。）
+
+  因此上文的"44/44 通过"只覆盖 Node 侧单测（`pnpm test`），**不包含三维点选、触屏拖拽、XR 控制器模拟等浏览器行为**。要补齐，需要先装 Chrome，或执行 `pnpm exec playwright install chromium` 后把 `channel:'chrome'` 换成 Playwright 自带 Chromium；在此之前视作待办，不记作已通过。

@@ -1,4 +1,5 @@
 import 'aframe';
+import 'aframe';
 import './style.css';
 import {getGuidance,type Guidance} from './guidance';
 import {initialRules,resetRuleSelection,chooseRuleCase,reviewRuleCase,appealRuleCase,restoreRules,RESOURCE_ITEMS,initialResourcePlan,confirmResourceParty,restoreResourcePlan,resourceReadiness,type RuleCase,type ResourceParty} from './institutions';
@@ -6,6 +7,8 @@ import {COURSE_TITLE,COURSE_QUESTION,COURSE_MECHANISMS,courseContext,courseRevie
 import {registerComponents,drawWorldPanel,type PanelButton} from './components';
 import {buildCampus} from './scene';
 import {initialState,executePolicy,claimCard,currentCard,allocate,compare,metrics,previewLayout,submitFeedback,reviewFeedback,publishFeedback,nextVisitor,serialize,restore,queryReceipt,LAYOUTS,type AppState,type Layout} from './domain';
+import {emptyFieldworkEnvelope,restoreFieldwork,fieldworkEnvelope,appendFieldworkEvent,exportFieldwork,importFieldwork,CODEBOOK,CHECK_ITEMS,GROUPS,QUOTA,OBSERVATION_ZONES,OBSERVATION_SLOTS,isFieldworkCode,type Group,type ComprehensionItem,type ComprehensionRecord,type ObservationRecord,type InterviewRecord} from './fieldwork';
+import {fieldworkTestPanel,fieldworkReportPanel,fieldworkDrawer,groupNames,itemNames,zoneNames,slotNames,TASKS,STANCES,FLOWS,type ButtonFactory,type FieldworkUiState,type FieldworkDraftTask,type FieldworkStance,type FieldworkZone,type FieldworkSlot,type FieldworkFlow} from './fieldwork-ui';
 
 const STORE='saturday-campus-v1';
 let state:AppState=initialState();
@@ -13,7 +16,9 @@ let rulesState=initialRules(),resourcePlan=initialResourcePlan();
 let courseReturnStage='welcome',resourceIndex=0,reviewIndex=0,ruleView='result',resourceView='offer';
 let routeToken=0;
 let stage='welcome', selected=false, role:'visitor'|'student'|'staff'='visitor';
-try{const saved=JSON.parse(localStorage.getItem(STORE)||'null');if(saved){state=restore(saved.domain);rulesState=restoreRules(saved.rules);resourcePlan=restoreResourcePlan(saved.resources);courseReturnStage=['welcome','policy','reveal','card','replay','feedback','review','next','allocation','receipt','history','service','case'].includes(saved.resumeStage)?saved.resumeStage:state.cardClaimed?'card':state.policy?'reveal':state.started?'policy':'welcome';stage=['course','course-rules','course-resources','course-participation','course-review'].includes(saved.stage)||(state.started&&['policy','reveal','card','replay','feedback','review','next','allocation','receipt','history','service','case'].includes(saved.stage))?saved.stage:'welcome';}}catch{}
+let fieldwork=emptyFieldworkEnvelope(),fieldworkGroup:Group='public',fieldworkTask:ComprehensionRecord['task']='digital',fieldworkSlot:ObservationRecord['slot']='morning',fieldworkZone:ObservationRecord['zone']='gate',fieldworkFlow:ObservationRecord['flow']='中',fieldworkStance:InterviewRecord['stance']='支持';
+const draftChecks=new Set<ComprehensionItem>(),draftCodes=new Set<string>();
+try{const saved=JSON.parse(localStorage.getItem(STORE)||'null');if(saved){state=restore(saved.domain);rulesState=restoreRules(saved.rules);resourcePlan=restoreResourcePlan(saved.resources);fieldwork=fieldworkEnvelope(restoreFieldwork(saved.fieldwork));courseReturnStage=['welcome','policy','reveal','card','replay','feedback','review','next','allocation','receipt','history','service','case'].includes(saved.resumeStage)?saved.resumeStage:state.cardClaimed?'card':state.policy?'reveal':state.started?'policy':'welcome';stage=['course','course-rules','course-resources','course-participation','course-review','fieldwork-test','fieldwork-report'].includes(saved.stage)||(state.started&&['policy','reveal','card','replay','feedback','review','next','allocation','receipt','history','service','case'].includes(saved.stage))?saved.stage:'welcome';}}catch{}
 let xrMessage='正在检测头显支持',xrSupported=false,toastTimer=0;
 let returnStage='card', pageIndex=0;
 let helpReturnStage='welcome',helpContext:Guidance|null=null;
@@ -30,7 +35,7 @@ const scene=document.querySelector('#scene') as any;
 const worldPanel=document.querySelector('#world-panel') as any;
 const rig=document.querySelector('#rig') as any;
 const camera=document.querySelector('#camera') as any;
-function save(){try{localStorage.setItem(STORE,JSON.stringify({domain:serialize(state),stage:stage==='step-help'?helpReturnStage:stage,rules:rulesState,resources:resourcePlan,resumeStage:courseReturnStage}))}catch{toast('浏览器存储不可用，本次进度将保留到关闭页面前。')}}
+function save(){try{localStorage.setItem(STORE,JSON.stringify({domain:serialize(state),stage:stage==='step-help'?helpReturnStage:stage,rules:rulesState,resources:resourcePlan,resumeStage:courseReturnStage,fieldwork:fieldworkEnvelope(fieldwork)}))}catch{toast('浏览器存储不可用，本次进度将保留到关闭页面前。')}}
 function toast(message:string){showXRToast(message);const el=document.querySelector('#toast')!;el.textContent=message;el.removeAttribute('hidden');clearTimeout(toastTimer);toastTimer=window.setTimeout(()=>el.setAttribute('hidden',''),4200);}
 let xrToastTimer=0;
 function showXRToast(message:string){if(!scene?.is('vr-mode'))return;let holder=document.querySelector('#xr-toast') as any;if(!holder){holder=document.createElement('a-plane');holder.id='xr-toast';holder.setAttribute('width','2.6');holder.setAttribute('height','.62');holder.setAttribute('position','0 .66 -2.3');holder.setAttribute('material','shader: flat; transparent: true');camera.append(holder)}
@@ -56,13 +61,14 @@ function renderGuidance(g:Guidance){
  next.hidden=!g.action;next.textContent=g.label||'';if(g.action)next.dataset.action=g.action;else delete next.dataset.action;
  document.querySelector('#mobile-task-role')!.textContent=g.step?`情境任务${g.step} · 课程原型`:'校园开放制度 · 课程原型';
  document.querySelector('#mobile-task-goal')!.textContent=g.goal;
+}
+function panel():{title:string;body:string;buttons:PanelButton[];act:number}{
+ const g=guidance();
  const recommendations=new Set(g.highlights||[g.action]);
  for(const el of document.querySelectorAll<HTMLElement>('#actions [data-action]'))el.classList.toggle('next-action',recommendations.has(el.dataset.action));
-}
-scene.addEventListener('campus-replay-ended',(e:CustomEvent)=>{replayPlaying=false;observed.add(e.detail.layout);if(stage==='replay')update()});
-function panel():{title:string;body:string;buttons:PanelButton[];act:number}{
- const b=(label:string,action:string,muted=false):PanelButton=>({label,action,tone:muted?'muted':'primary'});
- const m=metrics(state.preview),r=latest(),card=currentCard(state);
+  const b:ButtonFactory=(label:string,action:string,muted=false)=>({label,action,tone:muted?'muted':'primary'});
+  const m=metrics(state.preview),r=latest(),card=currentCard(state);
+  const ui:FieldworkUiState={group:fieldworkGroup,task:fieldworkTask,slot:fieldworkSlot,zone:fieldworkZone,flow:fieldworkFlow,stance:fieldworkStance,checks:draftChecks,codes:draftCodes};
  switch(stage){
  case 'course':return {act:0,title:COURSE_TITLE,body:`${COURSE_QUESTION}\n原报告第7页提出三项制度。名额比较和挪桌用于发现问题、检验边界。`,buttons:[...COURSE_MECHANISMS.map((m,i)=>b(`创新${['一','二','三'][i]}：${m.name}`,`course:${m.id}`)),b(state.started?'继续原来的情境任务':'开始四分钟情境体验',state.started?'course:resume':'start'),b('查看本次推演与证据边界','course-review',true),b('返回刚才的页面','course:back',true)]};
  case 'course-rules':{
@@ -82,9 +88,11 @@ function panel():{title:string;body:string;buttons:PanelButton[];act:number}{
  }
  case 'course-participation':return {act:0,title:'创新三：游客参与校园共建',body:'报告第10、11页：自愿观察路线问题，纸卡或电子提交，学生与工作人员共同评审，告知采纳或未采纳理由。\n网站把它做成“观察排队、试摆签到桌、提交建议、双审发布、下一位核验”。普通参观无需参与，志愿者不替代安保与保洁。',buttons:[b(state.policy?'进入共建意见流程':'先进入开放日，观察通行问题',state.policy?'feedback':'start'),b('查看本次反馈是否真的生效','course-review'),b('返回三项制度','course',true)]};
  case 'course-review':{
-  const review=courseReview(state,{rules:rulesState,resources:resourcePlan}),item=review.items[reviewIndex%review.items.length];
-  return {act:0,title:item.title,body:`${item.statusLabel}\n${item.evidence}\n对应原报告${item.slides}。课堂模拟与真实制度成效分开说明。`,buttons:[b('下一项课程证据','course-review:next'),b('查看三项制度原型','course'),b('查看已做过的决定','records',true),b('返回情境任务','course:resume',true)]};
+  const review=courseReview(state,{rules:rulesState,resources:resourcePlan},fieldwork),item=review.items[reviewIndex%review.items.length];
+  return {act:0,title:item.title,body:`${item.statusLabel}\n${item.evidence}\n对应原报告${item.slides}。课堂模拟与真实制度成效分开说明。`,buttons:[b('下一项课程证据','course-review:next'),b('查看三项制度原型','course'),b('查看已做过的决定','records',true),b('返回情境任务','course:resume',true),b('调研工具：录入与统计','fieldwork:test:new',true)]};
  }
+ case 'fieldwork-test':return fieldworkTestPanel(b,fieldwork,{group:fieldworkGroup,task:fieldworkTask,slot:fieldworkSlot,zone:fieldworkZone,flow:fieldworkFlow,stance:fieldworkStance,checks:draftChecks,codes:draftCodes});
+ case 'fieldwork-report':return fieldworkReportPanel(b,fieldwork);
  case 'step-help':{const g=helpContext||guidance();return {act:g.step,title:'这一步怎么做',body:`你现在是：${g.role}。\n${g.next}\n${g.why}`,buttons:[b('明白了，返回当前任务','close-guide'),...(g.action?[b(g.label||'继续当前任务',g.action)]:[])]};}
  case 'welcome':return {act:0,title:'周六，欢迎来访。',body:'课程问题：保护教学与学生日常的前提下，怎样让公众共享资源、让多方承担开放成本？\n三项制度：规则协作、资源互惠、自愿共建。',buttons:[b('先看课程项目与三项制度','course'),b('开始开放日','start'),b('操作说明与无障碍控制','help',true)]};
  case 'policy':return {act:1,title:'先定规则，再揭晓身份',body:'20 个工位，8 个已安排给学生。\n余下 12 席：O01–O12 在线申请，W01–W04 现场办理；各按编号排序。每人一席。',buttons:[b('A · 12 席全部在线发放','policy:A'),b('B · 8 席在线，4 席留给现场','policy:B')]};
@@ -105,6 +113,35 @@ function panel():{title:string;body:string;buttons:PanelButton[];act:number}{
  default:return {act:1,title:'开放日',body:'请选择岗亭公告板上的规则。',buttons:[b('返回岗亭','start')]};
  }
 }
+scene.addEventListener('campus-replay-ended',(e:CustomEvent)=>{replayPlaying=false;observed.add(e.detail.layout);if(stage==='replay')update()});
+function fieldValue(id:string){const el=document.getElementById(id) as HTMLInputElement|HTMLSelectElement|HTMLTextAreaElement|null;return el?el.value.trim():""}
+function contextValue(id:string){const el=document.getElementById(id) as HTMLInputElement|HTMLSelectElement|null;return el?el.value.trim():""}
+function checkValues(name:string){return [...document.querySelectorAll<HTMLInputElement>(`input[name="${name}"]:checked`)].map(input=>input.value)}
+function commitFieldwork(event:Parameters<typeof appendFieldworkEvent>[1],message:string){try{fieldwork=appendFieldworkEvent(fieldwork,event);document.querySelector(".drawer")?.remove();toast(message);}catch(error){toast(error instanceof Error?error.message:"调研记录未保存");}update();}
+function handleFieldwork(action:string){
+ const parts=action.split(":"),sub=parts[1],arg=parts[2];
+ try{
+  if(sub==="test"){
+   if(arg==="new"){stage="fieldwork-test";worldPanel.object3D.visible=true;poseBoard();}
+   else if(arg==="toggle"){const item=parts.slice(2).join(":") as ComprehensionItem;if(!CHECK_ITEMS.includes(item))throw new Error("未知的理解测试项。");if(draftChecks.has(item))draftChecks.delete(item);else draftChecks.add(item);}
+   else if(arg==="save"){if(!draftChecks.size)throw new Error("请先勾选测试者能自主说出的内容。");const id=`C-${String(fieldwork.comprehension.length+1).padStart(2,"0")}`;commitFieldwork({type:"comprehension:add",record:{id,group:fieldworkGroup,understood:[...draftChecks],task:fieldworkTask}},`已保存 ${id}：理解测试记录`);draftChecks.clear();return;}
+  }
+  if(sub==="group"){const group=parts.slice(2).join(":") as Group;if(!GROUPS.includes(group))throw new Error("未知的访谈对象。");fieldworkGroup=group;}
+  else if(sub==="task"){const task=parts.slice(2).join(":") as FieldworkDraftTask;if(!TASKS.includes(task))throw new Error("未知的测试任务。");fieldworkTask=task;}
+  else if(sub==="observation-form"){fieldworkSlot=(contextValue("obs-slot") as FieldworkSlot)||fieldworkSlot;fieldworkZone=(contextValue("obs-zone") as FieldworkZone)||fieldworkZone;drawer("现场观察",fieldworkDrawer("observation",fieldwork,uiState(),esc));return;}
+  else if(sub==="observation"&&arg==="save"){const queue=fieldValue("obs-queue");const weather=contextValue("obs-weather");const record={id:fieldValue("obs-id"),date:fieldValue("obs-date"),slot:contextValue("obs-slot") as FieldworkSlot,zone:contextValue("obs-zone") as FieldworkZone,flow:contextValue("obs-flow") as FieldworkFlow,conflict:fieldValue("obs-conflict"),...(weather?{weather:weather as "sunny"|"cloudy"|"rain"}:{}),...(queue?{queueMinutes:Number(queue)}:{})};commitFieldwork({type:"observation:add",record},`已保存 ${record.id}：现场观察`);return;}
+  else if(sub==="interview-form"){drawer("访谈记录",fieldworkDrawer("interview",fieldwork,uiState(),esc));return;}
+  else if(sub==="interview"&&arg==="save"){const quotes=fieldValue("int-quotes").split(/\r?\n/).map(line=>line.trim()).filter(Boolean);const codes=checkValues("fieldwork-code");codes.forEach(code=>{if(!isFieldworkCode(code))throw new Error("访谈编码只能使用预定义编码。")});if(!quotes.length)throw new Error("访谈必须至少保存一条原话引语。");if(!codes.length)throw new Error("访谈必须至少选择一个预定义编码。");const id=fieldValue("int-id");commitFieldwork({type:"interview:add",record:{id,group:contextValue("int-group") as Group,durationMinutes:Number(fieldValue("int-duration"))||0,quotes,codes,stance:contextValue("int-stance") as FieldworkStance}},`已保存 ${id}：访谈记录`);return;}
+  else if(sub==="records"){drawer("匿名调研记录",fieldworkDrawer("records",fieldwork,uiState(),esc));return;}
+  else if(sub==="export"){drawer("导出调研 JSON",`<p>复制下面整段文本保存，或在另一台设备上导入。</p><textarea id="int-json" rows="10" readonly></textarea>`);(document.getElementById("int-json") as HTMLTextAreaElement).value=exportFieldwork(fieldwork);return;}
+  else if(sub==="import"&&arg==="save"){const raw=fieldValue("int-json");const next=importFieldwork(raw);if(!next.comprehension.length&&!next.observations.length&&!next.interviews.length&&raw.length>2)throw new Error("导入被拒绝：记录与统计不一致或版本不符。");fieldwork=fieldworkEnvelope(next);document.querySelector(".drawer")?.remove();toast(`已导入：理解测试 ${next.comprehension.length} 条、观察 ${next.observations.length} 条、访谈 ${next.interviews.length} 条`);}
+  else if(sub==="import"){drawer("导入调研 JSON",fieldworkDrawer("import",fieldwork,uiState(),esc));return;}
+  else if(sub==="report"){stage="fieldwork-report";}
+  else if(sub==="back"){stage="course-review";}
+  update();
+ }catch(error){toast(error instanceof Error?error.message:"调研操作未完成");}
+}
+function uiState():FieldworkUiState{return {group:fieldworkGroup,task:fieldworkTask,slot:fieldworkSlot,zone:fieldworkZone,flow:fieldworkFlow,stance:fieldworkStance,checks:draftChecks,codes:draftCodes}}
 function statusName(s?:string){return ({submitted:'待审核',held:'暂缓，见原因',ready:'双方通过，待发布',published:'已发布'} as any)[s||'']||'未提交'}
 function reviewName(r:any){return !r?'未确认':r.decision==='approved'?'已通过':`暂缓：${r.reason}`}
 function update(){document.body.classList.toggle('experience-started',state.started);document.body.classList.toggle('course-view',stage.startsWith('course'));const p=panel(),g=guidance();document.querySelector('#panel-title')!.textContent=p.title;document.querySelector('#panel-body')!.textContent=p.body;document.querySelector('#actline')!.textContent=['课程原型 / 情境入口','情境任务一 / 比较参与机会','情境任务二 / 观察通行冲突','情境任务三 / 检验共建反馈'][p.act];document.querySelector('#actions')!.replaceChildren(...p.buttons.map(b=>{const el=document.createElement('button');el.textContent=b.label;el.dataset.action=b.action;if(b.tone==='muted')el.className='muted';return el}));document.querySelectorAll('header nav [data-action]').forEach(el=>el.classList.toggle('active',el.getAttribute('data-action')===`course:${stage.replace('course-','')}`));
@@ -124,6 +161,7 @@ async function dispatch(action:string){try{
  if(action.startsWith('resources:')){const sub=action.split(':')[1];if(sub==='next'){resourceIndex=(resourceIndex+1)%RESOURCE_ITEMS.length;resourceView='offer';}else if(sub==='detail')resourceView=resourceView==='cost'?'offer':'cost';else if(sub==='confirm')resourcePlan=confirmResourceParty(resourcePlan,action.split(':')[2] as ResourceParty);else if(sub==='reset')resourcePlan=initialResourcePlan();stage='course-resources';update();return;}
  if(action==='guide-help'){if(stage!=='step-help'){helpContext=guidance();helpReturnStage=stage;}stage='step-help';worldPanel.object3D.visible=true;poseBoard();document.querySelector('.sidebar')!.scrollTop=0;update();return;}
  if(action==='close-guide'){stage=helpReturnStage;helpContext=null;update();return;}
+ if(action.startsWith('fieldwork:')){handleFieldwork(action);return;}
  if(action==='toggle-board'){worldPanel.object3D.visible=!worldPanel.object3D.visible;return;}
  if(action==='close'){document.querySelector('.drawer')?.remove();return;}
  if(action==='start'){state={...state,started:true};stage='policy';walkTo('gate');}

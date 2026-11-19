@@ -1,5 +1,6 @@
 import {currentCard,metrics,type AppState} from './domain';
 import type {RulesState,ResourcePlan,ResourceParty} from './institutions';
+import type {FieldworkState} from './fieldwork';
 
 /** Text checked against the supplied 20-slide midterm presentation. */
 export const COURSE_TITLE='大学校园开放制度的创新设计';
@@ -81,7 +82,7 @@ function participationEvidence(state:AppState):string {
 }
 
 /** Current learning question and only the evidence supported by this run. */
-export function courseContext(stage:string,state:AppState,prototypes?:CoursePrototypes):CourseContext {
+export function courseContext(stage:string,state:AppState,prototypes?:CoursePrototypes,fieldwork?:FieldworkState):CourseContext {
  if(['policy','reveal','card','allocation'].includes(stage)){
   const card=currentCard(state);
   const lastChange=[...state.logs].reverse().find(log=>log.action==='更改名额规则');
@@ -123,7 +124,7 @@ export function courseContext(stage:string,state:AppState,prototypes?:CourseProt
  };
  if(['history','course-review','course-summary'].includes(stage))return {
   topic:'回看原型证据与尚未验证的部分',question:'这一轮实际做到了什么，还有哪些课程问题需要实地研究？',
-  evidence:courseReview(state,prototypes).summary,
+  evidence:courseReview(state,prototypes,fieldwork).summary,
   connection:'原报告把理解规则、确认责任和查询反馈列为原型测试任务。程序可运行与课堂统计属于原型证据，不能替代访谈、管理方确认与真实场景测试。',
   slides:'第12—13、20页',
  };
@@ -143,11 +144,12 @@ export interface CourseReviewItem {
  evidence:string;
  connection:string;
  slides:string;
+ evidenceLevel?:'none'|'classroom'|'field';
 }
 export interface CourseReview {summary:string;boundary:string;items:CourseReviewItem[]}
 
 /** A simulated local publication is distinct from a field-tested institution. */
-export function courseReview(state:AppState,prototypes?:CoursePrototypes):CourseReview {
+export function courseReview(state:AppState,prototypes?:CoursePrototypes,fieldwork?:FieldworkState):CourseReview {
  const compared=state.logs.some(log=>log.action==='更改名额规则'&&(log.reason.includes('规则 A 改成 B')||log.reason.includes('规则 B 改成 A')))&&hasLog(state,'窗口领取结果卡');
  const change=[...state.logs].reverse().find(log=>log.action==='更改名额规则');
  const simulatedSide=state.logs.some(log=>log.action==='临时试摆签到桌'&&log.result.includes('侧廊方案'));
@@ -191,9 +193,36 @@ export function courseReview(state:AppState,prototypes?:CoursePrototypes):Course
    connection:'第12页的80%理解门槛是拟定目标；第13页的访谈人数是计划样本，均不能写成已实现的数据。',slides:'第12—13、20页',
   },
  ];
- const count=items.slice(0,3).filter(item=>item.status==='completed').length;
+ if(!fieldwork){
+  const count=items.slice(0,3).filter(item=>item.status==='completed').length;
  return {
   summary:`课堂情境证据${count}/3项；本校处理模拟${simulatedCases.size?`已体验${simulatedCases.size}种情境`:'尚未开始'}；三方模拟核对${confirmedParties.length}/3${confirmedParties.length===3&&resources?.status==='simulation-ready'?'（仅模拟就绪）':''}。校际协作与校城互惠仍是拟议方案，尚无真实试点成效。`,
+  boundary:'原报告第20页明确：全部制度情境、资源额度与测试目标均属拟议，尚无试点成效。本地模拟结果与真实制度成效应分开说明。',
+  items,
+  };
+ }
+ const count=items.slice(0,3).filter(item=>item.status==='completed').length;
+ for(const item of items)item.evidenceLevel='none';
+ const fieldCodes:{rules:string[];resources:string[]}={
+  rules:['开放区不清楚','受限区不清楚','求助方式不清楚','不信任校方处理','担心个人信息','需要申诉渠道'],
+  resources:['成本无人承担','成本可分散','愿意付费','不愿意付费','管理人力不足'],
+ };
+ for(const id of ['rules','resources'] as const){
+  const codes=fieldCodes[id];
+  const evidence=fieldwork.interviews.filter(interview=>interview.codes.some(code=>codes.includes(code)));
+  if(evidence.length>=3){
+   const item=items.find(item=>item.id===id)!;
+   item.evidenceLevel='field';
+   item.evidence+=` 有${evidence.length}条对应编码的实地访谈记录；这只说明已有现场证据，不代表制度落地。`;
+  }
+ }
+ const comprehension=fieldwork.comprehension.length;
+ const fieldworkItem=items.find(item=>item.id==='fieldwork')!;
+ fieldworkItem.statusLabel=`实地：访谈 ${fieldwork.interviews.length}/20，观察 ${fieldwork.observations.length} 条，理解测试 ${comprehension} 条${comprehension<8?'，样本不足暂不判定':''}`;
+ fieldworkItem.evidence=`已录入理解测试${comprehension}条、现场观察${fieldwork.observations.length}条、访谈${fieldwork.interviews.length}条。现场记录可用于核对原报告问题，不等于试点成效。`;
+ const total=comprehension+fieldwork.observations.length+fieldwork.interviews.length;
+ return {
+  summary:`课堂情境证据${count}/3项；本校处理模拟${simulatedCases.size?`已体验${simulatedCases.size}种情境`:'尚未开始'}；三方模拟核对${confirmedParties.length}/3${confirmedParties.length===3&&resources?.status==='simulation-ready'?'（仅模拟就绪）':''}。校际协作与校城互惠仍是拟议方案，尚无真实试点成效。已收集${total}条现场记录，制度落地仍待确认。`,
   boundary:'原报告第20页明确：全部制度情境、资源额度与测试目标均属拟议，尚无试点成效。本地模拟结果与真实制度成效应分开说明。',
   items,
  };
