@@ -1,0 +1,5 @@
+Noto Sans SC Regular
+Source: https://github.com/notofonts/noto-cjk/blob/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf
+Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name Source.
+SIL Open Font License 1.1; see NotoSansSC-OFL.txt.
+Original unmodified font, includes real Simplified Chinese glyphs; no runtime network request.

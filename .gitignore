@@ -1,0 +1,20 @@
+node_modules/
+dist/
+.playwright/
+test-results/
+certs/
+.DS_Store
+
+video/work/
+video/__pycache__/
+
+# Regenerable recording intermediates
+video/assets/*.wav
+video/output/*-narration.wav
+video/output/qa/
+video/output/qa-contact-sheet.png
+video/output/encode.log
+video/output/encode-command.json
+video/output/verification.json
+video/output/*.ffmetadata
+video/.venv/

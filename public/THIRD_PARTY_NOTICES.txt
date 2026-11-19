@@ -1,0 +1,8 @@
+如果周六由你开校门 — 第三方署名
+
+A-Frame 1.7.1: Copyright A-Frame authors. MIT license in licenses/A-Frame-MIT.txt.
+Noto Sans SC: Copyright the Noto Project Authors. SIL Open Font License 1.1 in assets/NotoSansSC-OFL.txt; source and checksum in assets/FONT-SOURCE.txt.
+
+A-Frame bundles other open source libraries; upstream distribution retains their license comments. Complete reference-project license copies and the exact reviewed source files are in the source delivery docs/references.md and docs/third-party-licenses/.
+
+Campus geometry, characters, paper bridge and Chinese narrative are original coursework for this project.
